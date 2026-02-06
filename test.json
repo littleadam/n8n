@@ -1,0 +1,102 @@
+{
+  "name": "Simple Resume Screener - Gemini (No PDF Extract)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "resume-screener",
+        "responseMode": "lastNode",
+        "options": {
+          "binaryData": true
+        }
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "operation": "splitOutItems",
+        "propertyName": "resumes"
+      },
+      "name": "Split Resumes",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 1,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=YOUR_GEMINI_API_KEY",
+        "method": "POST",
+        "responseFormat": "json",
+        "jsonParameters": true,
+        "bodyParametersJson": "={\n  \"contents\": [\n    {\n      \"parts\": [\n        {\n          \"text\": \"You are an ATS resume screener. Compare the resume PDF with the job description PDF and respond ONLY in valid JSON.\\n\\nReturn exactly:\\n{\\n  \\\"percentage_match\\\": number,\\n  \\\"matching_skills\\\": [],\\n  \\\"missing_skills\\\": [],\\n  \\\"recommendation\\\": \\\"Best Fit | Average Fit | Not Fit\\\"\\n}\"\n        },\n        {\n          \"inlineData\": {\n            \"mimeType\": \"application/pdf\",\n            \"data\": \"{{$binary.jd.data}}\"\n          }\n        },\n        {\n          \"inlineData\": {\n            \"mimeType\": \"application/pdf\",\n            \"data\": \"{{$binary.resumes.data}}\"\n          }\n        }\n      ]\n    }\n  ]\n}"
+      },
+      "name": "Gemini Compare PDFs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const text = $json.candidates[0].content.parts[0].text;\nconst data = JSON.parse(text);\n\nlet category = \"Not Fit\";\nif (data.percentage_match >= 75) category = \"Best Fit\";\nelse if (data.percentage_match >= 50) category = \"Average Fit\";\n\nreturn {\n  resume: $binary.resumes.fileName,\n  percentage_match: data.percentage_match,\n  matching_skills: data.matching_skills,\n  missing_skills: data.missing_skills,\n  final_category: category\n};"
+      },
+      "name": "Score Logic",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "mode": "combine"
+      },
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [1080, 300]
+    },
+    {
+      "parameters": {
+        "operation": "toFile",
+        "fileFormat": "csv",
+        "options": {
+          "fileName": "resume_results.csv"
+        }
+      },
+      "name": "Create CSV",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 1,
+      "position": [1280, 300]
+    },
+    {
+      "parameters": {
+        "responseBody": "={{ { status: 'success', file: 'resume_results.csv' } }}"
+      },
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1480, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Split Resumes", "type": "main", "index": 0 }]]
+    },
+    "Split Resumes": {
+      "main": [[{ "node": "Gemini Compare PDFs", "type": "main", "index": 0 }]]
+    },
+    "Gemini Compare PDFs": {
+      "main": [[{ "node": "Score Logic", "type": "main", "index": 0 }]]
+    },
+    "Score Logic": {
+      "main": [[{ "node": "Combine Results", "type": "main", "index": 0 }]]
+    },
+    "Combine Results": {
+      "main": [[{ "node": "Create CSV", "type": "main", "index": 0 }]]
+    },
+    "Create CSV": {
+      "main": [[{ "node": "Webhook Response", "type": "main", "index": 0 }]]
+    }
+  }
+}

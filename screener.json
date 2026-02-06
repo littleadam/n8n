@@ -1,0 +1,196 @@
+{
+  "name": "AI Resume Screener",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "resume-screener",
+        "responseMode": "lastNode",
+        "options": {
+          "binaryData": true
+        }
+      },
+      "name": "Form Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "propertyName": "jd"
+      },
+      "name": "Extract JD PDF",
+      "type": "n8n-nodes-base.pdfExtract",
+      "typeVersion": 1,
+      "position": [400, 150]
+    },
+    {
+      "parameters": {
+        "operation": "splitOutItems",
+        "propertyName": "resumes"
+      },
+      "name": "Split Resumes",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 1,
+      "position": [400, 450]
+    },
+    {
+      "parameters": {
+        "propertyName": "resumes"
+      },
+      "name": "Extract Resume PDF",
+      "type": "n8n-nodes-base.pdfExtract",
+      "typeVersion": 1,
+      "position": [600, 450]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "system",
+            "content": "You are an ATS resume screening expert. Respond only in valid JSON."
+          },
+          {
+            "role": "user",
+            "content": "Job Description:\n{{ $node[\"Extract JD PDF\"].json.text }}\n\nResume:\n{{ $json.text }}\n\nEvaluate and return JSON with:\n{\n  \"percentage_match\": number,\n  \"matching_skills\": [],\n  \"missing_skills\": [],\n  \"summary\": \"short\",\n  \"recommendation\": \"Best Fit | Average Fit | Not Fit\"\n}\n\nRules:\nBest Fit >= 75\nAverage Fit 50-74\nNot Fit < 50"
+          }
+        ]
+      },
+      "name": "AI Resume Match",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 2,
+      "position": [820, 450],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai",
+          "name": "OpenAI Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const score = $json.percentage_match;\nlet category = \"Not Fit\";\nif (score >= 75) category = \"Best Fit\";\nelse if (score >= 50) category = \"Average Fit\";\nreturn {\n  resume: $binary.resumes.fileName,\n  percentage_match: score,\n  matching_skills: $json.matching_skills,\n  missing_skills: $json.missing_skills,\n  summary: $json.summary,\n  final_category: category\n};"
+      },
+      "name": "Score Normalizer",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1040, 450]
+    },
+    {
+      "parameters": {
+        "mode": "combine"
+      },
+      "name": "Combine Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [1260, 450]
+    },
+    {
+      "parameters": {
+        "operation": "toFile",
+        "fileFormat": "csv",
+        "options": {
+          "fileName": "resume_screening_results.csv"
+        }
+      },
+      "name": "Create CSV",
+      "type": "n8n-nodes-base.spreadsheetFile",
+      "typeVersion": 1,
+      "position": [1480, 450]
+    },
+    {
+      "parameters": {
+        "responseBody": "={{ {\n  status: 'success',\n  results_file: 'resume_screening_results.csv'\n} }}"
+      },
+      "name": "Final Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1700, 450]
+    }
+  ],
+  "connections": {
+    "Form Webhook": {
+      "main": [
+        [
+          {
+            "node": "Extract JD PDF",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Resumes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Resumes": {
+      "main": [
+        [
+          {
+            "node": "Extract Resume PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Resume PDF": {
+      "main": [
+        [
+          {
+            "node": "AI Resume Match",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Resume Match": {
+      "main": [
+        [
+          {
+            "node": "Score Normalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Normalizer": {
+      "main": [
+        [
+          {
+            "node": "Combine Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Results": {
+      "main": [
+        [
+          {
+            "node": "Create CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create CSV": {
+      "main": [
+        [
+          {
+            "node": "Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
